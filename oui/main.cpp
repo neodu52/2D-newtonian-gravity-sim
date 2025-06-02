@@ -13,8 +13,8 @@
 #include <sstream>
 #include <iostream>
 
-const unsigned int INIT_WIDTH = 800;
-const unsigned int INIT_HEIGHT = 600;
+const unsigned int INIT_WIDTH = 1100;
+const unsigned int INIT_HEIGHT = 900;
 
 const float G = 6.67430e-11f;
 const float RESTITUTION = 0.8f;
