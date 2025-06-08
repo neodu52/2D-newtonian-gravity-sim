@@ -8,6 +8,5 @@ inclure une couleur de font a la sim
 	genre milky way
 passer a la 3D et en meme temps y inclure la relativité générale.
 	projet initial mdr
-
 rajouter une notion de vrai distance, ex: 10 = 1ua
 	rendre la variable modifiable dans l'ui

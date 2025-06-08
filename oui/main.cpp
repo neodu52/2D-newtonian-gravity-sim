@@ -1,5 +1,7 @@
 // main.cpp
 #define _USE_MATH_DEFINES
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <GL/freeglut.h>
@@ -68,13 +70,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         isPaused = !isPaused;
 }
 
-GLuint compileShader(GLenum type, const char* source) {
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, nullptr);
-    glCompileShader(shader);
-    return shader;
-}
-
 GLuint createCircleVAO(int segments) {
     std::vector<float> vertices = { 0.0f, 0.0f };
     for (int i = 0; i <= segments; ++i) {
@@ -91,6 +86,100 @@ GLuint createCircleVAO(int segments) {
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
     return VAO;
+}
+
+GLuint backgroundTexture, bgVAO, bgVBO, bgShader;
+
+GLuint loadTexture(const char* filename) {
+    int width, height, nrChannels;
+    unsigned char* data = stbi_load(filename, &width, &height, &nrChannels, 0);
+    if (!data) {
+        std::cerr << "Failed to load texture: " << filename << std::endl;
+        return 0;
+    }
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, nrChannels == 4 ? GL_RGBA : GL_RGB, width, height, 0,
+        nrChannels == 4 ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, data);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    stbi_image_free(data);
+    return texture;
+}
+
+GLuint compileShader(GLenum type, const char* src) {
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
+    return shader;
+}
+
+void setupBackground() {
+    float quad[] = {
+        -1.0f, -1.0f,  0.0f, 0.0f,
+         1.0f, -1.0f,  1.0f, 0.0f,
+         1.0f,  1.0f,  1.0f, 1.0f,
+        -1.0f,  1.0f,  0.0f, 1.0f
+    };
+    unsigned int indices[] = { 0, 1, 2, 2, 3, 0 };
+
+    GLuint bgEBO;
+    glGenVertexArrays(1, &bgVAO);
+    glGenBuffers(1, &bgVBO);
+    glGenBuffers(1, &bgEBO);
+
+    glBindVertexArray(bgVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, bgVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bgEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    const char* vs = R"(
+        #version 330 core
+        layout (location = 0) in vec2 pos;
+        layout (location = 1) in vec2 texCoord;
+        out vec2 TexCoord;
+        void main() {
+            TexCoord = texCoord;
+            gl_Position = vec4(pos, 0.0, 1.0);
+        })";
+
+    const char* fs = R"(
+        #version 330 core
+        out vec4 FragColor;
+        in vec2 TexCoord;
+        uniform sampler2D background;
+        void main() {
+            FragColor = texture(background, TexCoord);
+        })";
+
+    GLuint vShader = compileShader(GL_VERTEX_SHADER, vs);
+    GLuint fShader = compileShader(GL_FRAGMENT_SHADER, fs);
+    bgShader = glCreateProgram();
+    glAttachShader(bgShader, vShader);
+    glAttachShader(bgShader, fShader);
+    glLinkProgram(bgShader);
+    glDeleteShader(vShader);
+    glDeleteShader(fShader);
+}
+
+void renderBackground() {
+    glUseProgram(bgShader);
+    glBindVertexArray(bgVAO);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, backgroundTexture);
+    glUniform1i(glGetUniformLocation(bgShader, "background"), 0);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
 }
 
 void applyGravitationalForces(float dt) {
@@ -206,6 +295,10 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     else if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
         bodies.push_back(createBody(x, y, 0.0f, 0.0f, 1.0f, 0.02f, false, 0.8f, 0.8f, 0.8f));
     }
+    if (button == GLFW_MOUSE_BUTTON_MIDDLE && (mods & GLFW_MOD_CONTROL)) {
+        bhole.push_back(createBlackHole(x, y, 0.0f, 0.0f, 10.0, 0.07f, true, 0.3f, 0.0f, 0.0f));
+        return;
+    }
 }
 
 int main(int argc, char** argv) {
@@ -256,6 +349,10 @@ int main(int argc, char** argv) {
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    backgroundTexture = loadTexture("background.jpg");
+    if (!backgroundTexture) std::cerr << "Erreur chargement image\n";
+    setupBackground();
+
     GLuint circleVAO = createCircleVAO(60);
     bodies.push_back(createBody(-0.3f, 0.0f, 0.0f, 0.0f, 5.0f, 0.05f, false, 0.0f, 0.7f, 1.0f));
     bhole.push_back(createBlackHole(0.3f, 0.3f, 0.0f, 0.0f, 5.0, 0.07f, true, 0.2f, 0.0f, 0.0f));
@@ -272,8 +369,46 @@ int main(int argc, char** argv) {
             updateBodies(deltaTime);
         }
 
+        if (backgroundTexture) {
+            glDisable(GL_DEPTH_TEST);
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, backgroundTexture);
+
+            glMatrixMode(GL_PROJECTION);
+            glPushMatrix();
+            glLoadIdentity();
+            glOrtho(0, 1, 0, 1, -1, 1);
+
+            glMatrixMode(GL_MODELVIEW);
+            glPushMatrix();
+            glLoadIdentity();
+
+            glBegin(GL_QUADS);
+            glTexCoord2f(0, 0); glVertex2f(0, 0);
+            glTexCoord2f(1, 0); glVertex2f(1, 0);
+            glTexCoord2f(1, 1); glVertex2f(1, 1);
+            glTexCoord2f(0, 1); glVertex2f(0, 1);
+            glEnd();
+
+            glPopMatrix();
+            glMatrixMode(GL_PROJECTION);
+            glPopMatrix();
+            glMatrixMode(GL_MODELVIEW);
+
+            glEnable(GL_DEPTH_TEST);
+            glDisable(GL_TEXTURE_2D);
+        }
+
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+        // Enable blending for halo
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // TODO: Bind and draw background texture here
+
         glClear(GL_COLOR_BUFFER_BIT);
+        glDisable(GL_DEPTH_TEST);
+        renderBackground();
 
         glUseProgram(shaderProgram);
         float aspect = (float)windowHeight / (float)windowWidth;
@@ -288,9 +423,15 @@ int main(int argc, char** argv) {
         }
 
         for (auto& b : bhole) {
+            // Draw halo
             glUniform2f(glGetUniformLocation(shaderProgram, "offset"), b.x, b.y);
-            glUniform1f(glGetUniformLocation(shaderProgram, "scale"), b.radius);
+            glUniform1f(glGetUniformLocation(shaderProgram, "scale"), b.radius * 1.5f);
             glUniform3f(glGetUniformLocation(shaderProgram, "color"), b.r, b.g, b.b);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, 62);
+
+            // Draw core
+            glUniform1f(glGetUniformLocation(shaderProgram, "scale"), b.radius);
+            glUniform3f(glGetUniformLocation(shaderProgram, "color"), 0.0f, 0.0f, 0.0f);
             glDrawArrays(GL_TRIANGLE_FAN, 0, 62);
         }
 
