@@ -13,16 +13,19 @@
 #include <sstream>
 #include <iostream>
 
-const unsigned int INIT_WIDTH = 1100;
+const unsigned int INIT_WIDTH = 1000;
 const unsigned int INIT_HEIGHT = 900;
 
 const float G = 6.67430e-11f;
 const float RESTITUTION = 0.8f;
 const float IMPULSE_STRENGTH = 2.5f;
+const float masssolaire = 2e30;
+const int c = 3e8;
 
 int windowWidth = INIT_WIDTH;
 int windowHeight = INIT_HEIGHT;
 bool isPaused = false;
+float i = 1.0f;
 
 struct Body {
     float x, y;
@@ -33,12 +36,27 @@ struct Body {
     float r, g, b;
 };
 
+struct black_hole {
+    float x, y;
+    float vx, vy;
+    double mass; 
+    float radius;      
+    bool isStatic;
+    float r, g, b;
+};
+
 std::vector<Body> bodies;
+std::vector<black_hole> bhole;
 int selectedBodyIndex = -1;
 
 Body createBody(float x, float y, float vx, float vy, float mass_kg, float radius, bool isStatic, float r, float g, float b) {
     return Body{ x, y, vx, vy, mass_kg, radius, isStatic, r, g, b };
 }
+
+black_hole createBlackHole(float x, float y, float vx, float vy, double mass, float radius, bool isStatic, float r, float g, float b) {
+    return black_hole{ x, y, vx, vy, mass, radius, isStatic, r, g, b };
+}
+
 // c le gui
 void ShowBodyEditor(bool isPaused) {
     if (!isPaused || selectedBodyIndex < 0 || selectedBodyIndex >= bodies.size()) return;
@@ -104,6 +122,12 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
         bodies.push_back(createBody(x, y, 0.0f, 0.0f, 1.0f, 0.03f, false, 1.0f, 1.0f, 1.0f));
     }
+    if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
+        if (button == GLFW_KEY_LEFT_CONTROL) {
+            bhole.push_back(createBlackHole(0.0f, 0.0f, 0.0f, 0.0f, 1.0 * masssolaire, 0.3, true, 0.1f, 0.0f, 0.0f));
+        }
+    }   
+
     // c pour ouvrire l'ui
     else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         selectedBodyIndex = -1;
@@ -121,11 +145,13 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 void key_callback(GLFWwindow* window, int key, int, int action, int) {
     if (action == GLFW_PRESS && key == GLFW_KEY_SPACE) isPaused = !isPaused;
 }
+
 // c tout les math de la gravité
 void applyGravitationalForces(float dt) {
     for (size_t i = 0; i < bodies.size(); ++i) {
         if (bodies[i].isStatic) continue;
         float ax = 0, ay = 0;
+
         for (size_t j = 0; j < bodies.size(); ++j) {
             if (i == j) continue;
             float dx = bodies[j].x - bodies[i].x;
@@ -136,10 +162,22 @@ void applyGravitationalForces(float dt) {
             ax += force * dx / dist / bodies[i].mass;
             ay += force * dy / dist / bodies[i].mass;
         }
+
+        for (const black_hole& b : bhole) {
+            float dx = b.x - bodies[i].x;
+            float dy = b.y - bodies[i].y;
+            float dist2 = dx * dx + dy * dy;
+            float dist = std::sqrt(dist2) + 1e-6f;
+            float force = G * bodies[i].mass * b.mass / dist2;
+            ax += force * dx / dist / bodies[i].mass;
+            ay += force * dy / dist / bodies[i].mass;
+        }
+
         bodies[i].vx += ax * dt;
         bodies[i].vy += ay * dt;
     }
 }
+
 // ca c pr update la positions des corps
 void updateBodies(float dt) {
     for (Body& b : bodies) {
@@ -177,7 +215,6 @@ int main(int argc, char** argv) {
     gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetKeyCallback(window, key_callback);
-    glfwSetMouseButtonCallback(window, mouse_button_callback);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -213,10 +250,10 @@ int main(int argc, char** argv) {
     glDeleteShader(fragmentShader);
 
     GLuint circleVAO = createCircleVAO(60);
-
-    //x, y, vx, vy, mass_kg, radius, isStatic, r, g, b
     bodies.push_back(createBody(-0.3f, 0.0f, 0.0f, 0.0f, 5.0f, 0.05f, false, 0.0f, 0.7f, 1.0f));
     bodies.push_back(createBody(0.3f, 0.0f, 0.0f, 0.0f, 50.0f, 0.1f, true, 1.0f, 0.9f, 0.2f));
+
+    bhole.push_back(createBlackHole(0.0f, 0.0f, 0.0f, 0.0f, masssolaire * 0.01f, 0.15f, true, 0.0f, 0.0f, 0.0f));
 
     auto lastTime = std::chrono::high_resolution_clock::now();
 
@@ -243,6 +280,13 @@ int main(int argc, char** argv) {
         glBindVertexArray(circleVAO);
 
         for (const Body& b : bodies) {
+            glUniform2f(offsetLoc, b.x, b.y);
+            glUniform1f(scaleLoc, b.radius);
+            glUniform3f(colorLoc, b.r, b.g, b.b);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, 62);
+        }
+
+        for (const black_hole& b : bhole) {
             glUniform2f(offsetLoc, b.x, b.y);
             glUniform1f(scaleLoc, b.radius);
             glUniform3f(colorLoc, b.r, b.g, b.b);
