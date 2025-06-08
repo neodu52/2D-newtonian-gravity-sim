@@ -3,9 +3,11 @@ une espece de simulation de photon qui utilise les equations de la relativitée g
 	de facon a ce que ceci ce disperces dans une direction soit choisie avec le curseur soit en cercle et il
 	faudra aussi desactiver les colision de bord pour les photon
 inclure un troue noir en 2D
-	passer dans un autre type de simulation en 2D qui utilise la relativité générale plutot que la gravité newtonienne
 	L'ui pour le troue noir sera differente de l'ui pour les planete, sa masse se definissant en massse solaire
 inclure une couleur de font a la sim
 	genre milky way
 passer a la 3D et en meme temps y inclure la relativité générale.
 	projet initial mdr
+
+rajouter une notion de vrai distance, ex: 10 = 1ua
+	rendre la variable modifiable dans l'ui
